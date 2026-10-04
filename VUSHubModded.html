@@ -382,8 +382,8 @@ body.rm .hcredit{background:#14152b}
         <select class="inp" id="acAppSelect"></select>
       </div>
       <div class="sec">
-        <label class="lbl" for="acCps">Clicks Per Second (0-50)</label>
-        <input class="inp" type="number" id="acCps" min="0" max="50" value="10">
+        <label class="lbl" for="acCps">Clicks Per Second (0-2500)</label>
+        <input class="inp" type="number" id="acCps" min="0" max="2500" value="10">
       </div>
       <div class="foot">
         <button class="btn pri" id="acToggleBtn" style="width:100%">Start Auto Clicker</button>
@@ -1023,12 +1023,21 @@ $("acToggleBtn").onclick = () => {
     if (!app) { toast("Invalid app selected", "err"); return; }
     let cps = parseInt($("acCps").value, 10);
     if (isNaN(cps) || cps < 0) cps = 0;
-    if (cps > 50) cps = 50;
+    if (cps > 2500) cps = 2500;
     if (cps === 0) { toast("CPS set to 0. Stopped."); return; }
+    // Browsers clamp timers to ~4ms+, so high CPS is done by batching clicks per tick.
+    const TICK = 20, FETCH_MAX = 50; // ms per tick; network pings capped at 50/s
+    let owed = 0, fetchOwed = 0;
     acInterval = setInterval(() => {
-      if (window.VUSAnalytics && typeof window.VUSAnalytics.trackAppClick === "function") window.VUSAnalytics.trackAppClick(app.name);
-      fetch(app.url, { mode: 'no-cors', cache: 'no-store' }).catch(() => {});
-    }, 1000 / cps);
+      owed += cps * TICK / 1000;
+      fetchOwed += Math.min(cps, FETCH_MAX) * TICK / 1000;
+      const n = Math.floor(owed); owed -= n;
+      const f = Math.floor(fetchOwed); fetchOwed -= f;
+      if (window.VUSAnalytics && typeof window.VUSAnalytics.trackAppClick === "function") {
+        for (let i = 0; i < n; i++) window.VUSAnalytics.trackAppClick(app.name);
+      }
+      for (let i = 0; i < f; i++) fetch(app.url, { mode: 'no-cors', cache: 'no-store' }).catch(() => {});
+    }, TICK);
     $("acToggleBtn").textContent = "Stop Auto Clicker";
     $("acToggleBtn").classList.remove("pri"); $("acToggleBtn").classList.add("arm");
     toast(`Auto clicker started for ${appName} at ${cps} CPS`, "load");
